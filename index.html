@@ -130,6 +130,7 @@
     <button id="adbtn">📺 Watch ad (+5 stamina)</button>
     <button id="feedbackbtn">💬 Feedback</button>
     <button id="helpbtn">👋 How to test</button>
+    <button id="tgbtn">✈️ Community</button>
     <button id="devrefill" title="dev only">🛠️ Dev: refill stamina</button>
     <button id="devtier" title="dev only">🛠️ +Tier</button>
     <button id="devasc" title="dev only">🛠️ Ascend-ready</button>
@@ -156,6 +157,8 @@ const FEEDBACK = {
   viewUrl:    "https://docs.google.com/forms/d/e/1FAIpQLSeG_Gyr8rSIAfUWUvZ4g9Nzidx3Ckf2a6I9M35rZ_-iZZWQVw/viewform",
   fields: { category:"entry.1028590795", message:"entry.279081050", context:"entry.1890012734" },
 };
+// Playtest community (Telegram). Empty string hides the in-game links/button.
+const TELEGRAM = "https://t.me/+pRhrcuzvei1kNzU1";
 const esc = (s)=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 /* ======================================================================
    Regress to Progress / Regress to Progress — v0.3.0 vertical slice
@@ -2755,6 +2758,7 @@ function testBriefHTML(){ return `<div class="fb-brief">
     <li>Explore the map: 🎒 loot, 🎽 gear, the warehouse dig, roam encounters, 📅 live events, 🧠 Muscle Memory.</li>
   </ul>
   <b>What to note:</b> anything <b>confusing</b>, unfun, or too grindy; <b>bugs / glitches</b>; anything that <b>broke</b> or dead-ended; a number that seems off; a joke that didn't land. Hit <b>💬 Feedback</b> anytime.
+  ${TELEGRAM?`<br><br>✈️ <b>Join the test community on Telegram</b> for updates + chat: <a class="link" href="${esc(TELEGRAM)}" target="_blank" rel="noopener">open the group</a>.`:""}
   <br><br><span class="tiny">Saves live on this device only — alpha progress may be wiped as the game changes. That's normal.</span>
 </div>`; }
 
@@ -2764,7 +2768,7 @@ function openHelp(){ showModal(`<h3>👋 How to help test</h3>${testBriefHTML()}
 
 function openFeedback(){
   showModal(`<h3>💬 Feedback</h3>
-    <div class="fb-brief">Found a bug, something confusing, or an idea? Send it straight to the dev. A snapshot of your game is attached automatically so bugs are easy to trace.</div>
+    <div class="fb-brief">Found a bug, something confusing, or an idea? Send it straight to the dev — a snapshot of your game is attached automatically so bugs are easy to trace.${TELEGRAM?` Prefer to chat? <a class="link" href="${esc(TELEGRAM)}" target="_blank" rel="noopener">✈️ Telegram community</a>.`:""}</div>
     <label class="tiny">Type</label>
     <select class="txt" id="fbcat">
       <option>🐞 Bug / something broke</option>
@@ -2872,12 +2876,14 @@ $("#boardbtn").addEventListener("click",()=>{ openBoards(); });
 $("#eventbtn").addEventListener("click",()=>{ openEvents(); });
 $("#feedbackbtn").addEventListener("click",()=>{ openFeedback(); });
 $("#helpbtn").addEventListener("click",()=>{ openHelp(); });
+$("#tgbtn").addEventListener("click",()=>{ if(TELEGRAM && typeof window!=="undefined") window.open(TELEGRAM,"_blank","noopener"); });
 $("#reset").addEventListener("click",()=>{ if(confirm("Hard reset ALL progress (account + run)?")){ localStorage.removeItem(SAVE_KEY); location.reload(); } });
 $("#themebtn").addEventListener("click",()=>{ const cur=document.documentElement.getAttribute("data-theme"); const nxt=cur==="dark"?"light":(cur==="light"?null:"dark"); if(nxt)document.documentElement.setAttribute("data-theme",nxt);else document.documentElement.removeAttribute("data-theme"); S.settings.theme=nxt; save(); });
 
 /* ============================ INIT ============================ */
 if(S.settings&&S.settings.theme) document.documentElement.setAttribute("data-theme",S.settings.theme);
 if(!DEV){ ["devrefill","devtier","devasc","artbtn"].forEach(id=>{ const e=$("#"+id); if(e) e.style.display="none"; }); }   // hide dev tools for testers (add ?dev=1 to show)
+if(!TELEGRAM){ const _t=$("#tgbtn"); if(_t) _t.style.display="none"; }   // hide community button if no channel set
 const _needOnboard = !S.account.name;
 if(_needOnboard){ /* new player → character creation overlay opens right after first render */ }
 else if(!S.account.seenOnboard){ coachSay("onboarding"); S.account.seenOnboard=true; logLine("sys","<b>Welcome to Regress to Progress.</b> You're a slob on a couch. Somewhere out there is a gym. It fears you less than you fear it."); }
