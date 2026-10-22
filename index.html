@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"/>
-<title>Regress to Progress (R2P) — v0.5.0</title>
+<title>Regress to Progress (R2P) — v0.5.1</title>
 <meta name="description" content="A comedy fitness idle-RPG. When does fitness ever end?"/>
 <meta name="theme-color" content="#f4efe4"/>
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#232323"/>
@@ -66,6 +66,8 @@
   button:hover{background:var(--ink);color:var(--paper)}
   button:disabled{opacity:.35;cursor:not-allowed;border-style:dashed}
   button:disabled:hover{background:transparent;color:var(--ink)}
+  button.sel{background:var(--accent);color:var(--paper);border-color:var(--accent)}
+  button.sel:hover{background:var(--accent);color:var(--paper)}
   .mapgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .place{border:1.5px solid var(--line);border-radius:12px;padding:10px;cursor:pointer;text-align:center}
   .place:hover{border-color:var(--ink)}
@@ -106,7 +108,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Regress to Progress <span class="pill">v0.5.0 · R2P</span></h1>
+  <h1>Regress to Progress <span class="pill">v0.5.1 · R2P</span></h1>
   <p class="sub">When does fitness ever end? <a class="link" id="themebtn">theme</a></p>
 
   <div class="coach card" id="coach">
@@ -129,6 +131,7 @@
     <button id="eventbtn">📅 Events</button>
     <button id="adbtn">📺 Watch ad (+5 stamina)</button>
     <button id="feedbackbtn">💬 Feedback</button>
+    <button id="betabtn">🔔 Beta + Founding Slob</button>
     <button id="helpbtn">👋 How to test</button>
     <button id="tgbtn">✈️ Community</button>
     <button id="devrefill" title="dev only">🛠️ Dev: refill stamina</button>
@@ -206,8 +209,11 @@ const COACH_LINES = {
     "The couch has a you-shaped dent. It's basically a plus-one on your lease now.",
   ],
   ad:[
-    "You watched an ad for energy. The irony's not lost on me — just on your drug test. Officially Not Natty™ now.",
+    "On your PHONE? Mid-session? I've seen goldfish with longer attention spans. Eyes up.",
     "Ad watched, stamina granted. The devs thank you. Your conscience files a small complaint.",
+    "You paused the grind to watch a mattress commercial. We'll pretend that didn't happen. Back to work.",
+    "The developer felt that. Somewhere a yacht got one millimetre shinier. You got a few stamina. Thrilled for everyone.",
+    "Focus. FOCUS. The barbell doesn't care how good that ad's lighting was.",
   ],
   hardcore:[
     "Hardcore mode. No ads, no shortcuts, no me bailing you out — I greyed the button so you can't weaken. You're welcome. (Slightly scared of you.)",
@@ -979,6 +985,7 @@ const FLOOR_TIER_CAP=5;      // muscle-memory melts only tiers 0..5 of 13 (Guard
 const FLOOR_SPEED_MULT=0.35; // accelerated tiers cost 35% of normal gains
 const FLOOR_TRANSFER_RATE=0.5; // cross-discipline memory applies at 50% (Guardrail 2)
 const SAVE_KEY="prorer_v4";
+const R2P_VERSION="0.5.1";
 /* bodyweight work yields less raw stat than loaded/equipment work (you can't add plates to a push-up).
    These exercise ids are bodyweight → ×0.8 gains in train(). Cardio/metcon/loaded aren't tagged. (Tunable.) */
 const BODYWEIGHT_IDS = new Set(["pushup","homewo","bars","push","core","pyramids","ringwork","gymnastics","skill","burpee","tilt","mat","lakemat"]);
@@ -1006,7 +1013,7 @@ function freshRun(disc, lifestyle){
     completed:[], arenaOpen:false, bossBeaten:false,
     sqCount:{}, keys:{}, here:null, legacyAwarded:false, tierBossReady:false, cfLoop:0,
     path:null, slobClock:0, pathDone:false,
-    mode:"normal", trainedToday:true, actions:0, pathFailed:false,   // Phase D mode · 75-Hard daily tracker · ranked counter · soft-failed challenge path
+    mode:"normal", trainedToday:true, actions:0, pathFailed:false, adsToday:0,   // Phase D mode · 75-Hard daily tracker · ranked counter · soft-failed challenge path · ad-stamina diminisher
     loc:"map", enc:null, outcome:null, lastDay: todayStr(),
   };
 }
@@ -1024,6 +1031,8 @@ const BASE={
     dayCount:0, adventStreak:0, adventClaimedDay:-1,           // monotonic day counter + New Year advent streak
     trophies:{},                                               // event-participation collectibles (cosmetic)
     gearInv:{}, gear:{},                                        // permanent wearable-gear kit: owned counts + equipped {slot:id}
+    firstSeenTs:0, firstVersion:"", founder:false,              // alpha-tester tracking: when/what version they first played → "Founding Slob" perk at beta
+    email:"", betaSignup:false,                                 // opt-in beta-notify list (the durable, cross-device way to recognise + reward testers)
   },
   run:null,
   settings:{theme:null},
@@ -1039,6 +1048,10 @@ function save(){ try{localStorage.setItem(SAVE_KEY,JSON.stringify(S));}catch(e){
 function migrate(){
   if(!S.account) S.account=clone(BASE.account);
   for(const k in BASE.account) if(!(k in S.account)) S.account[k]=clone(BASE.account[k]);
+  // --- alpha-tester stamp: anyone who opens the game during alpha = a Founding Slob (reward delivered at beta).
+  //     Local-only (fragile), but combined with Google-Form feedback it's enough to recognise early testers. ---
+  if(!S.account.firstSeenTs){ S.account.firstSeenTs=Date.now(); S.account.firstVersion=R2P_VERSION; }
+  S.account.founder=true;
   if(!S.run) S.run=freshRun("Newbie","slob");
   if(!S.log) S.log=[];
   if(S.run && !S.run.lastDay) S.run.lastDay=todayStr();
@@ -1054,6 +1067,7 @@ function migrate(){
   if(S.run && S.run.path===undefined) S.run.path=null;
   if(S.run && S.run.slobClock===undefined) S.run.slobClock=0;
   if(S.run && S.run.pathDone===undefined) S.run.pathDone=false;
+  if(S.run && S.run.adsToday===undefined) S.run.adsToday=0;
   if(S.run && !MODES[S.run.mode]) S.run.mode="normal";        // map old casual/softcore saves → normal
   if(S.run && S.run.trainedToday===undefined) S.run.trainedToday=true;
   if(S.run && S.run.actions===undefined) S.run.actions=0;
@@ -1153,6 +1167,7 @@ function tick(){
     r.meters.screen=clamp(r.meters.screen-40,0,100);
     r.meters.subs=clamp(r.meters.subs-20,0,100);
     r.meters.full=0;
+    r.adsToday=0;   // ad-stamina diminishing returns reset each day
     maybeRotateEvent();   // events run on the compressed calendar
     if(pathHas("dailyOrDie") && !r.trainedToday){ a.maxTs=Math.max(a.maxTs||0,now); failChallenge("The 75 Hard-O: you missed a day. The whole thing resets. Those are the rules — you knew them."); return; }
     r.trainedToday=false;   // new day: must train again (75 Hard-O)
@@ -1259,6 +1274,21 @@ function pickLoot(){
 }
 function whItems(rar){ return LOOT.filter(it=>it.wh && (it.rarity||0)===rar); }   // warehouse pools by rarity (also the "wild" rares for roam)
 function grantItem(it){ if(!it) return; if(it.slot){ S.account.gearInv[it.id]=(S.account.gearInv[it.id]||0)+1; } else { S.run.loot[it.id]=(S.run.loot[it.id]||0)+1; } return it; }   // gear → permanent kit; junk → per-run stash
+/* --- DOOMSCROLL (the Feed's one real use): an ad buys STAMINA; doomscrolling buys the CHANCE of a FIND
+   (loot / a cash lead) that training never surfaces — the distinct niche that makes "scroll vs ad" a real
+   decision about what you're spending screen-time ON. Still mostly a trap. winText/loseText = per-venue flavor. */
+function doomscroll(screenAmt, winText, loseText){
+  const resist=nodeHas("ironDiscipline");
+  addMeter("screen", resist?Math.max(2,Math.round(screenAmt*0.45)):screenAmt);
+  const r=Math.random();
+  if(r<0.16){ const it=grantItem(pickLoot()); addGains(1);
+    logLine("win", `${winText} <b>And the scroll actually coughed up something real:</b> ${it?it.em+" "+it.name:"a scrap"} — straight into the stash.`); }
+  else if(r<0.28){ const c=3+Math.floor(Math.random()*6); S.run.cash+=c;
+    logLine("win", `${winText} <b>You also stumbled onto a genuine lead: +$${c}.</b> The algorithm giveth, rarely.`); }
+  else if(r<0.50){ addGains(2); logLine("win", winText); }
+  else { logLine("lose", loseText); }
+  coachSay("slacked"); afterAction();
+}
 /* --- DeluluApple Warehouse Sale: the MMO grind-zone. Each 1⚡ dive is a lottery — 0.01% legendary,
    0.1% rare, some junk/cash, mostly a bruise. The tiny odds ARE the hook (one more dive…). --- */
 const WAREHOUSE_MISS=[
@@ -1472,15 +1502,21 @@ function awardRunLegacy(){
   const p=pathDef();   // challenge-path COMPLETION bonus (only if the run finished = boss beaten AND the path wasn't failed)
   if(p && S.run.bossBeaten && !S.run.pathDone && !S.run.pathFailed){ S.account.legacy+=p.legacy; S.account.badges[p.badge]=(S.account.badges[p.badge]||0)+1; S.run.pathDone=true; logLine("gold",`🏅 CHALLENGE COMPLETE: <b>${p.em} ${p.name}</b> → +${p.legacy} Legacy and the <b>${p.badge}</b> badge. Respect earned the hard way.`); }
 }
+/* fresh entry into the Regress screen — reset the per-regress choices ONCE here (NOT inside
+   openAscension, which re-renders on every pick and must preserve what's already selected). */
+function regressScreen(){
+  _nextPath=null; _nextMode="normal";
+  _nextDisc=(S.run && S.run.disc && S.run.disc!=="Newbie") ? S.run.disc : "Bodybuilding";   // default to current class, never silently Running
+  openAscension();
+}
 function openAscension(){
   awardRunLegacy();
-  _nextPath=null; _nextMode="normal";   // each regress starts path-free, normal mode
   const a=S.account;
   // offer SHARED nodes + the class you just lived (muscle memory from this life)
   const nodeOpts=MM_NODES.concat(classMMFor(S.run.disc)).filter(n=>!a.mmNodes.includes(n.id));
   const canBuy = a.legacy>=1 && nodeOpts.length>0;
   const discOpts=DISC_LIST.filter(d=>d!=="Newbie" && (d!=="CrossFit"||crossfitUnlocked()))
-    .map(d=>`<button data-act="setNextDisc" data-v="${d}">${d==S.run.disc?d+" (again)":d}</button>`).join("");
+    .map(d=>`<button data-act="setNextDisc" data-v="${d}"${d===_nextDisc?' class="sel"':''}>${d==S.run.disc?d+" (again)":d}</button>`).join("");
   const cfTease = (crossfitUnlocked() && !a.mastered.includes("CrossFit")) ? `<p class="tiny q-done">🏋️ You've mastered everything. There is only one place left to go. You have been… sentenced to <b>CrossFit</b>.</p>` : "";
   const nodeList = nodeOpts.length? nodeOpts.map(n=>
       `<button data-act="pickNode" data-v="${n.id}" ${canBuy?"":"disabled"}><b>${n.name}</b> — ${n.desc}${CLASS_MM[S.run.disc]&&CLASS_MM[S.run.disc].some(x=>x.id===n.id)?` <span class="tiny">(${S.run.disc})</span>`:""}</button>`).join("")
@@ -1498,13 +1534,13 @@ function openAscension(){
     <div>${discOpts}</div>
     <p style="margin-top:10px"><b>3 · Take a Challenge Path?</b> <span class="tiny">(optional — harder run, but bonus Legacy + a permanent badge)</span></p>
     <div>
-      <button data-act="setPath" data-v="none">None (standard)</button>
-      ${CHALLENGE_PATHS.map(p=>`<button data-act="setPath" data-v="${p.id}" title="${p.desc}">${p.em} ${p.name}</button>`).join("")}
+      <button data-act="setPath" data-v="none"${!_nextPath?' class="sel"':''}>None (standard)</button>
+      ${CHALLENGE_PATHS.map(p=>`<button data-act="setPath" data-v="${p.id}" title="${p.desc}"${_nextPath===p.id?' class="sel"':''}>${p.em} ${p.name}</button>`).join("")}
     </div>
-    <p class="tiny" id="ascpath">Path: <b>none</b> (standard run)</p>
+    <p class="tiny" id="ascpath">${(()=>{const p=_nextPath?CHALLENGE_PATHS.find(x=>x.id===_nextPath):null;return p?`Path: <b>${p.em} ${p.name}</b> — <span class="tiny">${p.note}</span>`:`Path: <b>none</b> (standard run)`;})()}</p>
     <p style="margin-top:10px"><b>4 · Access mode</b> <span class="tiny">(harder access = bonus Legacy)</span></p>
-    <div>${Object.keys(MODES).map(k=>`<button data-act="setMode" data-v="${k}" title="${MODES[k].desc}">${MODES[k].em} ${MODES[k].name}${MODES[k].legacy?` (+${MODES[k].legacy})`:""}</button>`).join("")}</div>
-    <p class="tiny" id="ascmode">Mode: <b>😌 Normal</b> — full economy access</p>
+    <div>${Object.keys(MODES).map(k=>`<button data-act="setMode" data-v="${k}" title="${MODES[k].desc}"${_nextMode===k?' class="sel"':''}>${MODES[k].em} ${MODES[k].name}${MODES[k].legacy?` (+${MODES[k].legacy})`:""}</button>`).join("")}</div>
+    <p class="tiny" id="ascmode">${(()=>{const md=MODES[_nextMode]||MODES.normal;return `Mode: <b>${md.em} ${md.name}</b> — <span class="tiny">${md.desc}</span>`;})()}</p>
     <p style="margin-top:10px"><b>5 · How do you come back?</b></p>
     <button data-act="doRegress" data-v="normal">🧍 Start fresh (skip the slob grind)</button>
     <button data-act="doRegress" data-v="slob">🛋️ Stay a slob (true-zero start)</button>
@@ -1628,14 +1664,44 @@ function afterAction(card){
 }
 
 /* --- can watch ad? (hardcore greys the button) --- */
-function canWatchAd(){ return S.run.mode!=="hardcore" && !pathHas("nattyOnly") && !pathHas("noConsumables"); }
+/* --- AD ECONOMY (anti-abuse + honest-mockery): every ad is a straight +20% screen time, and the stamina
+   it hands back shrinks each day (5,4,3,2,1 → 0). Screen maxed = no more ads or doomscroll — the hard cap
+   that stops permanent ad-fuelled stamina. Watching an ad is ALLOWED and stays Natty — the Coach just can't
+   help ribbing you for pausing the grind to stare at your phone. Lines may use {c}=a coach, {n}=your name. --- */
+const AD_SNARK=[
+  (g)=>`{c} looks up: "Watching an ad? Mid-session? C'mon {n} — FOCUS. Focus!" ...You got ${g} stamina out of it, at least.`,
+  (g)=>`"Phone down, {n}." {c} sighs. "You paused your one life to watch a mattress commercial for ${g} stamina." A long, disappointed blink.`,
+  (g)=>`That was a long one. You gave the developer a full, uninterrupted viewing in exchange for ${g} stamina. Generous. Saintly, even.`,
+  (g)=>`{c} caught you: "Is that... an AD? During YOUR workout? ${g} stamina, {n}. That's what you sold your focus for." Rough.`,
+  (g)=>`You could've rested for free. Instead you watched a stranger yell about car insurance for ${g} stamina. Bold choice, {n}.`,
+  (g)=>`+${g} stamina. The ad was longer than the workout it funded. {c} would like that noted for the record.`,
+  (g)=>`"Back to it, {n}." {c} claps once. "Thirty seconds of your life for ${g} stamina. We don't talk about the exchange rate."`,
+  (g)=>`${g} whole stamina. Was the trade-off worth it? Be honest. The skip button was right there the whole time.`,
+  (g)=>`Somewhere a metric ticked up and a yacht got shinier. You got ${g} stamina. Everyone won. Mostly them.`,
+  (g)=>`"${g} stamina," {c} repeats, slowly. "And the ads only get longer from here, {n}. You know that. ...Right?"`,
+];
+function adSnark(g){
+  const n=esc((S.account&&S.account.name)||"champ");
+  return pick(AD_SNARK)(g).replace(/\{c\}/g, speakerName()).replace(/\{n\}/g, n);
+}
+function adStaminaGain(){ return Math.max(0, 5 - (S.run.adsToday||0)); }   // diminishing: 1st=5, 2nd=4 … 5th=1, then nothing
+function adBlockReason(){
+  if(S.run.mode==="hardcore") return "🚫 Ads off (Hardcore)";
+  if(pathHas("nattyOnly")) return "🚫 Ads off (Raw Dogging It)";
+  if(pathHas("noConsumables")) return "🚫 Ads off (Air & Discipline)";
+  if(S.run.meters.screen>=100) return "🧠 Screen maxed — touch grass";
+  if(adStaminaGain()<=0) return "📺 No ad stamina left today";
+  return null;
+}
+function canWatchAd(){ return !adBlockReason(); }
 
 /* ============================ RENDER ============================ */
 function render(){
   renderStats(); renderQuest(); renderMain(); renderLog();
   const ad=$("#adbtn");
-  ad.disabled=!canWatchAd();
-  ad.textContent = canWatchAd()? "📺 Watch ad (+5 stamina)" : "🚫 Ads disabled (Hardcore)";
+  const adReason=adBlockReason();
+  ad.disabled=!!adReason;
+  ad.textContent = adReason ? adReason : `📺 Watch ad (+${adStaminaGain()} stamina)`;
 }
 function meterBar(label,v,danger){ return `<div class="mtr">${label} ${Math.round(v)}<div class="bar ${danger&&v>70?'danger':''}"><i style="width:${Math.min(100,v)}%"></i></div></div>`; }
 function renderStats(){
@@ -1652,6 +1718,7 @@ function renderStats(){
       <div style="flex:1 1 auto;min-width:0">
         <div class="row">
           <span class="stat">👤 <b>${esc(a.name||"You")}</b></span>
+          ${a.founder?`<span class="pill" title="Alpha Founding Slob — early-tester perks land at beta">🛋️ Founding Slob</span>`:""}
           <span class="stat">🏷️ <b>${r.disc}</b></span>
           <span class="stat">T${r.tier} · ${tierName(r.disc,r.tier)}</span>
         </div>
@@ -1841,7 +1908,7 @@ function openPlace(id){
   if(id==="arena"){
     if(r.tier>=maxTier()){
       if(!r.bossBeaten){ openBoss(); return; }
-      if(canAscend()){ openAscension(); return; }
+      if(canAscend()){ regressScreen(); return; }
     } else if(r.tierBossReady){ openTierBoss(); return; }
     logLine("sys","The Arena is quiet. Finish your objectives first."); render(); return;
   }
@@ -1855,6 +1922,7 @@ function buildEncounter(id){ // wrapper: attach location-bound side-quests + cla
   const e=_buildEncBase(id);
   if(e && !e.isSQ){ e.loc=id; e.sidequests=sideQuestsAt(id);
     if(e.choices) e.choices=e.choices.filter(c=>!(c.offTheme && c.stat && isOffPath(c.stat)));  // (A) hide off-theme + off-path options (BB gym → iron & mirror)
+    if(e.choices && S.run.meters.screen>=100) e.choices=e.choices.filter(c=>!/^📱/.test(c.label));  // screen maxed → can't doomscroll either; the 📵 "log off" escapes stay
   }
   return e;
 }
@@ -1929,7 +1997,7 @@ function _buildEncBase(id){
       choices:[
         {label:"💪 Attempt a push-up",cost:1,do:()=>train({id:"pushup",label:"The Duel With Gravity",cost:0,base:3,stat:"str",statChance:.45,hardness:1})},
         {label:"🍗 Raid the fridge",cost:1,do:()=>{ addMeter("full",35); if(S.run.meters.full>=100){S.run.stam=Math.max(0,S.run.stam-5);logLine("lose","🍗 FOOD COMA. −5 stamina. You ascend… to the couch.");}else logLine("sys","🍗 Glorious. Can't see your feet. Fullness rising."); afterAction(); }},
-        {label:"📱 Doomscroll",cost:1,do:()=>{ const resist=nodeHas("ironDiscipline"); addMeter("screen",resist?3:7); if(chance(.3)){addGains(2);logLine("win","📱 Rabbit-holed into a genuinely good training breakdown. Rare W from the algorithm.");}else logLine("lose","📱 Three hours gone. You know the second lead always loses. Useless."); coachSay("slacked"); afterAction(); }},
+        {label:"📱 Doomscroll",cost:1,do:()=>doomscroll(7,"📱 Rabbit-holed into a genuinely good training breakdown. Rare W from the algorithm.","📱 Three hours gone. You know the second lead always loses. Useless.")},
       ]
     } : (()=>{
       // choice-adventure template: safe / spend-for-more / gamble / conditional / opt-out
@@ -2006,7 +2074,7 @@ function _buildEncBase(id){
       flav:"An infinite scroll of people fitter, richer, and more hydrated than you, performing joy for strangers. COACH feels most at home here.",
       sketch:{foe:"influencer"},
       choices:[
-        {label:"📱 Doomscroll fitness content (gamble)",cost:1,do:()=>{ const resist=nodeHas("ironDiscipline"); addMeter("screen",resist?4:9); if(chance(.28)){ addGains(2); logLine("win","📱 Buried in the slop: one genuinely good coaching cue. You rewind it twice. Rare algorithm W."); } else logLine("lose","📱 Forty minutes evaporated. You now know a stranger's entire morning routine and none of your own."); coachSay("slacked"); afterAction(); }},
+        {label:"📱 Doomscroll fitness content (gamble)",cost:1,do:()=>doomscroll(9,"📱 Buried in the slop: one genuinely good coaching cue. You rewind it twice. Rare algorithm W.","📱 Forty minutes evaporated. You now know a stranger's entire morning routine and none of your own.")},
         {label:"😤 Compare yourself to an influencer (gamble)",cost:1,do:()=>{ addMeter("screen",7); if(chance(.4)){ S.run.buffs.push({id:"motivated",name:"Motivated",em:"😤",turns:4,gainMult:0.12}); logLine("win","😤 Spite is a renewable energy source. <b>Motivated</b> +12% gains. 'I could do that.' (You can't. Yet.)"); } else { S.run.disc_stat=Math.max(0,S.run.disc_stat-1); logLine("lose","😤 The comparison goes the other way. Motivation leaks out of you like air from a sad balloon."); } afterAction(); }},
         {label:"📵 Log off and touch grass (recover screen)",cost:1,do:()=>{ S.run.meters.screen=clamp(S.run.meters.screen-18,0,100); S.run.health=clamp(S.run.health+3,0,30); logLine("win","📵 Phone in another room. The silence is deafening, then nice. −Screen. COACH is suspicious of your sudden peace."); afterAction(); }},
       ]
@@ -2047,7 +2115,7 @@ function buildPilatesEncounter(id){
       sketch:{pose:"slob",props:["couch","phone"]},
       choices:[
         {label:"🧎 Attempt a pelvic tilt",cost:1,do:()=>train({id:"tilt",label:"The Pelvic Tilt",cost:0,base:3,stat:"mob",statChance:.45,hardness:1})},
-        {label:"📱 Watch Pilates influencers (grippy-sock haul)",cost:1,do:()=>{ const resist=nodeHas("ironDiscipline"); addMeter("screen",resist?3:7); if(chance(.3)){addGains(2);logLine("win","📱 One clip was an actual beginner mat routine. You even 'engaged your core' once, accidentally.");}else logLine("lose","📱 40 minutes of reformer hauls by people with a spare room for it. Core unchanged."); coachSay("slacked"); afterAction(); }},
+        {label:"📱 Watch Pilates influencers (grippy-sock haul)",cost:1,do:()=>doomscroll(7,"📱 One clip was an actual beginner mat routine. You even 'engaged your core' once, accidentally.","📱 40 minutes of reformer hauls by people with a spare room for it. Core unchanged.")},
         {label:"🥤 Order a $12 celery juice (gamble)",cost:1,do:()=>{ S.run.cash=Math.max(0,S.run.cash-5); if(chance(.5)){addGains(2);S.run.disc_stat++;logLine("win","🥤 Tastes like a freshly mown lawn. Against all odds, you feel ready to engage something.");}else{addMeter("full",12);logLine("lose","🥤 Twelve dollars of sad green. −$5, +fullness, −dignity.");} afterAction(); }},
       ]
     } : {
@@ -2098,7 +2166,7 @@ function buildRunningEncounter(id){
       sketch:{pose:"slob",props:["couch","phone"]},
       choices:[
         {label:"🏃 Jog to the mailbox and back",cost:1,do:()=>train({id:"jog",label:"The Mailbox 400m",cost:0,base:3,stat:"end",statChance:.45,hardness:1})},
-        {label:"📱 Stalk fast people on Strava",cost:1,do:()=>{ const resist=nodeHas("ironDiscipline"); addMeter("screen",resist?3:7); if(chance(.3)){addGains(2);logLine("win","📱 You studied a sub-3 marathoner's splits for an hour. Osmosis is a training method, probably.");}else logLine("lose","📱 Everyone you follow ran today. You gave one of them a kudos and closed the app. Useless."); coachSay("slacked"); afterAction(); }},
+        {label:"📱 Stalk fast people on Strava",cost:1,do:()=>doomscroll(7,"📱 You studied a sub-3 marathoner's splits for an hour. Osmosis is a training method, probably.","📱 Everyone you follow ran today. You gave one of them a kudos and closed the app. Useless.")},
         {label:"🥤 Mix an electrolyte drink (gamble)",cost:1,do:()=>{ S.run.cash=Math.max(0,S.run.cash-5); if(chance(.5)){addGains(2);S.run.disc_stat++;logLine("win","🥤 Tastes like salted disappointment. Against the odds, you feel ready to move.");}else{addMeter("full",10);logLine("lose","🥤 Five dollars of flavoured salt, drunk on the couch. −$5, −dignity.");} afterAction(); }},
       ]
     } : {
@@ -2154,7 +2222,7 @@ function buildCalisthenicsEncounter(id){
       sketch:{pose:"slob",props:["couch","phone"]},
       choices:[
         {label:"🧎 Attempt a single push-up",cost:1,do:()=>train({id:"pushup",label:"The Duel With Gravity",cost:0,base:3,stat:"str",statChance:.45,hardness:1})},
-        {label:"📱 Watch muscle-up tutorials",cost:1,do:()=>{ const resist=nodeHas("ironDiscipline"); addMeter("screen",resist?3:7); if(chance(.3)){addGains(2);logLine("win","📱 One tutorial actually broke down the transition. You mimed it on the carpet, badly, but you mimed it.");}else logLine("lose","📱 Forty minutes of shirtless men making the impossible look casual. You remain horizontal. Useless."); coachSay("slacked"); afterAction(); }},
+        {label:"📱 Watch muscle-up tutorials",cost:1,do:()=>doomscroll(7,"📱 One tutorial actually broke down the transition. You mimed it on the carpet, badly, but you mimed it.","📱 Forty minutes of shirtless men making the impossible look casual. You remain horizontal. Useless.")},
         {label:"📦 Finally assemble the bar (gamble)",cost:1,do:()=>{ if(chance(.5)){addGains(2);S.run.disc_stat++;logLine("win","📦 Wedged in the doorframe. It held your weight. You hung there, delighted, like a happy bat.");}else{logLine("lose","📦 Instructions in four languages, none of them yours. It's in three pieces on the floor now. Tomorrow's problem.");} afterAction(); }},
       ]
     } : {
@@ -2209,7 +2277,7 @@ function buildMetconEncounter(id){
       sketch:{pose:"slob",props:["couch","phone"]},
       choices:[
         {label:"🏋️ Swing the doorstop kettlebell",cost:1,do:()=>train({id:"swing",label:"Kettlebell Swings",cost:0,base:3,stat:"str",statChance:.45,hardness:1})},
-        {label:"📱 Watch CrossFit Games highlights",cost:1,do:()=>{ const resist=nodeHas("ironDiscipline"); addMeter("screen",resist?3:7); if(chance(.3)){addGains(2);logLine("win","📱 You learned what a 'chipper' is and that you will one day fear it. Knowledge is a warm-up.");}else logLine("lose","📱 An hour of elite athletes vomiting athletically. Inspiring. You remain on the couch, un-vomited."); coachSay("slacked"); afterAction(); }},
+        {label:"📱 Watch CrossFit Games highlights",cost:1,do:()=>doomscroll(7,"📱 You learned what a 'chipper' is and that you will one day fear it. Knowledge is a warm-up.","📱 An hour of elite athletes vomiting athletically. Inspiring. You remain on the couch, un-vomited.")},
         {label:"🥤 Mix a scoop of something tactical (gamble)",cost:1,do:()=>{ S.run.cash=Math.max(0,S.run.cash-5); if(chance(.5)){addGains(2);S.run.disc_stat++;logLine("win","🥤 Tastes like blue. Heart rate up, pupils wide, suddenly the kettlebell looks reasonable.");}else{addMeter("screen",8);logLine("lose","🥤 Over-scooped. You vibrated on the couch for an hour planning a workout you did not do.");} afterAction(); }},
       ]
     } : {
@@ -2275,7 +2343,7 @@ function buildCrossFitEncounter(id){
       sketch:{pose:"slob",props:["couch","phone"]},
       choices:[
         {label:"🤸 Attempt ten burpees",cost:1,do:()=>train({id:"burpee",label:"The First Ten Burpees",cost:0,base:3,stat:"end",statChance:.45,hardness:1})},
-        {label:"📱 Watch the Games on loop",cost:1,do:()=>{ const resist=nodeHas("ironDiscipline"); addMeter("screen",resist?3:7); if(chance(.3)){addGains(2);logLine("win","📱 You learned what a 'chipper' is and that you will, one day, fear it. Knowledge is a warm-up.");}else logLine("lose","📱 An hour of elite humans vomiting athletically. Inspiring. You remain, un-vomited, horizontal."); coachSay("slacked"); afterAction(); }},
+        {label:"📱 Watch the Games on loop",cost:1,do:()=>doomscroll(7,"📱 You learned what a 'chipper' is and that you will, one day, fear it. Knowledge is a warm-up.","📱 An hour of elite humans vomiting athletically. Inspiring. You remain, un-vomited, horizontal.")},
         {label:"🥤 Pre-load on something tactical (gamble)",cost:1,do:()=>{ S.run.cash=Math.max(0,S.run.cash-5); if(chance(.5)){addGains(2);S.run.disc_stat++;logLine("win","🥤 Tastes like blue raspberry and poor decisions. Heart rate climbing. The rope looks almost reasonable now.");}else{addMeter("screen",8);logLine("lose","🥤 Over-scooped. You vibrated on the couch planning a workout you did not do. −$5.");} afterAction(); }},
       ]
     } : {
@@ -2758,11 +2826,13 @@ function testBriefHTML(){ return `<div class="fb-brief">
     <li>Explore the map: 🎒 loot, 🎽 gear, the warehouse dig, roam encounters, 📅 live events, 🧠 Muscle Memory.</li>
   </ul>
   <b>What to note:</b> anything <b>confusing</b>, unfun, or too grindy; <b>bugs / glitches</b>; anything that <b>broke</b> or dead-ended; a number that seems off; a joke that didn't land. Hit <b>💬 Feedback</b> anytime.
+  <br><br>🛋️ <b>You're a Founding Slob</b> for testing this early. Tap <b>🔔 Beta + Founding Slob</b> to leave your email and get first dibs on beta + early-tester perks.
   ${TELEGRAM?`<br><br>✈️ <b>Join the test community on Telegram</b> for updates + chat: <a class="link" href="${esc(TELEGRAM)}" target="_blank" rel="noopener">open the group</a>.`:""}
   <br><br><span class="tiny">Saves live on this device only — alpha progress may be wiped as the game changes. That's normal.</span>
 </div>`; }
 
 function openHelp(){ showModal(`<h3>👋 How to help test</h3>${testBriefHTML()}
+  <button class="choice" data-act="openBetaAct">🔔 Beta + Founding Slob</button>
   <button class="choice" data-act="openFeedbackAct">💬 Leave feedback</button>
   <button class="choice" data-act="closeModal">Got it</button>`); }
 
@@ -2787,7 +2857,8 @@ function openFeedback(){
 function feedbackContext(){
   const r=S.run||{},a=S.account||{};
   return JSON.stringify({
-    v:"0.5.0", name:a.name, disc:r.disc, tier:r.tier, mode:r.mode,
+    v:R2P_VERSION, name:a.name, email:a.email, founder:a.founder, firstSeen:a.firstSeenTs,
+    disc:r.disc, tier:r.tier, mode:r.mode,
     actions:r.actions, str:r.str, end:r.end, mob:r.mob, cash:r.cash,
     legacy:a.legacy, ascensions:a.ascensions, path:r.path, enhanced:r.enhanced,
     ua:(typeof navigator!=="undefined"?navigator.userAgent:""),
@@ -2795,6 +2866,41 @@ function feedbackContext(){
     ts:new Date().toISOString(),
   });
 }
+/* --- BETA / Founding Slob email capture: the durable tester registry (survives cleared storage + new
+   devices, unlike the localStorage stamp). Reuses the verified Feedback form with its own category so it
+   works with ZERO new setup — filter the Sheet by "🔔 Beta signup" to get the email list. --- */
+function openBetaSignup(){
+  const a=S.account||{};
+  const done = a.betaSignup && a.email;
+  showModal(`<h3>${done?"🛋️ Founding Slob — you're on the list":"🔔 Beta list + 🛋️ Founding Slob club"}</h3>
+    <div class="fb-brief">${done
+      ? `You're signed up as <b>${esc(a.email)}</b>. We'll email you the moment <b>beta</b> (TestFlight) opens — with early-tester perks for being here first. Changed your email? Update it below.`
+      : `Playing the alpha makes you a <b>Founding Slob</b>. Drop your email to get pinged when <b>beta</b> opens (TestFlight) and to lock in early-tester perks. No spam — only the milestones that matter.`}</div>
+    <label class="tiny">Email</label>
+    <input class="txt" id="betaemail" type="email" autocomplete="email" placeholder="you@example.com" value="${esc(a.email||"")}">
+    <div id="betastatus" class="tiny" style="margin:4px 0"></div>
+    <button class="choice" data-act="sendBeta"><b>${done?"Update my email":"Count me in"}</b></button>
+    <button class="choice" data-act="closeModal">${done?"Close":"Maybe later"}</button>`);
+}
+function sendBetaSignup(){
+  const ee=$("#betaemail"), st=$("#betastatus");
+  const email=((ee&&ee.value)||"").trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ if(st){ st.textContent="That doesn't look like an email — mind checking it?"; st.style.color="var(--lose)"; } return; }
+  if(st){ st.textContent="Signing you up…"; st.style.color="var(--faint)"; }
+  S.account.email=email; S.account.betaSignup=true; S.account.founder=true; save();
+  const cat="🔔 Beta signup / Founding Slob", msg="BETA EMAIL: "+email, ctx=feedbackContext();
+  if(FEEDBACK.formAction && /^https:\/\/docs\.google\.com\//.test(FEEDBACK.formAction)){
+    const fd=new FormData();
+    fd.append(FEEDBACK.fields.category, cat);
+    fd.append(FEEDBACK.fields.message, msg);
+    fd.append(FEEDBACK.fields.context, ctx);
+    fetch(FEEDBACK.formAction,{method:"POST",mode:"no-cors",body:fd})
+      .then(()=>betaDone(email)).catch(()=>feedbackFallback(cat,msg,ctx));
+  } else { feedbackFallback(cat,msg,ctx); }
+}
+function betaDone(email){ showModal(`<h3>🛋️ Welcome to the Founding Slob club</h3>
+  <p class="flav">You're on the list as <b>${esc(email)}</b>. When beta opens, you'll be first to know — perks and all. Now get off your phone and back to the grind.</p>
+  <button class="choice" data-act="closeModal">Let's go</button>`); }
 function sendFeedback(){
   const me=$("#fbmsg"), ce=$("#fbcat"), st=$("#fbstatus");
   const msg=((me&&me.value)||"").trim(), cat=((ce&&ce.value)||"");
@@ -2833,8 +2939,8 @@ document.addEventListener("click",(ev)=>{
   else if(act==="choose"){ const c=S.run.enc.choices[+v]; if(c.cost&&S.run.stam<c.cost){logLine("lose","Not enough stamina.");render();return;} if(c.cost)S.run.stam-=c.cost; S.run.enc=null; c.do(); }
   else if(act==="leaveEnc"){ S.run.enc=null; render(); }
   else if(act==="startSQ"){ S.run.enc=buildSQEncounter(v); render(); }
-  else if(act==="bossWon"){ closeModal(); afterAction(false); openAscension(); }
-  else if(act==="cfRegress"){ closeModal(); afterAction(false); openAscension(); }   // take the vibes → normal regress (+CrossFitter Legacy, baked into awardRunLegacy)
+  else if(act==="bossWon"){ closeModal(); afterAction(false); regressScreen(); }
+  else if(act==="cfRegress"){ closeModal(); afterAction(false); regressScreen(); }   // take the vibes → normal regress (+CrossFitter Legacy, baked into awardRunLegacy)
   else if(act==="failReincarnate"){ _nextPath=null; S.run=freshRun(S.run.disc==="Newbie"?"Bodybuilding":S.run.disc,"normal"); closeModal(); logLine("sys","↩︎ A new life, unburdened by the path that broke you."); coachSay("dailyReturn"); save(); render(); }
   else if(act==="slobReincarnate"){ _nextPath=null; S.run=freshRun(S.run.disc==="Newbie"?"Bodybuilding":S.run.disc,"normal"); closeModal(); logLine("gold","↩︎ Reincarnated — upright, reluctant, alive. The couch recedes. For now."); coachSay("dailyReturn"); save(); render(); }
   else if(act==="cfRunItBack"){ S.run.cfLoop=(S.run.cfLoop||0)+1; S.run.bossBeaten=false; S.run.tierBossReady=false; S.run.arenaOpen=true; logLine("gold",`🔁 RUN IT BACK. Loop ${S.run.cfLoop+1}. The WODs reshuffle, Uncle Rhabdo cracks his knuckles, and the grind does not end. It never ends. That's the point.`); closeModal(); coachSay("dailyReturn"); save(); render(); }
@@ -2845,14 +2951,16 @@ document.addEventListener("click",(ev)=>{
   else if(act==="randName"){ const el=$("#obname"); if(el) el.value=randomSlobName(); }
   else if(act==="openFeedbackAct"){ openFeedback(); }
   else if(act==="sendFeedback"){ sendFeedback(); }
+  else if(act==="openBetaAct"){ openBetaSignup(); }
+  else if(act==="sendBeta"){ sendBetaSignup(); }
   else if(act==="pickNode") pickNode(v);
   else if(act==="buyNodeMM") buyNodeMM(v);
   else if(act==="sellLoot") sellLoot(v);
   else if(act==="sellAll") sellAllLoot();
   else if(act==="equipGear") equipGear(v);
   else if(act==="unequipGear") unequipGear(v);
-  else if(act==="setPath"){ _nextPath=(v==="none"?null:v); const el=$("#ascpath"); if(el){ const p=_nextPath?CHALLENGE_PATHS.find(x=>x.id===_nextPath):null; el.innerHTML=p?`Path: <b>${p.em} ${p.name}</b> — <span class="tiny">${p.note}</span>`:`Path: <b>none</b> (standard run)`; } }
-  else if(act==="setMode"){ _nextMode=v; const el=$("#ascmode"); if(el){ const md=MODES[v]; el.innerHTML=`Mode: <b>${md.em} ${md.name}</b> — <span class="tiny">${md.desc}</span>`; } }
+  else if(act==="setPath"){ _nextPath=(v==="none"?null:v); openAscension(); }   // re-render so the picked button highlights (choice was always kept — the highlight was the bug)
+  else if(act==="setMode"){ _nextMode=v; openAscension(); }
   else if(act==="joinEvent"){ const ev=activeEvent(); closeModal(); if(!ev){ logLine("sys","📅 No event is on today — come back on its calendar date."); render(); } else if(!worldOpen()){ logLine("sys","📅 Event activities open once you've reached Tier 2 and the world unlocks."); render(); } else { S.run.here="event"; S.run.enc=buildEventEncounter(ev.id); render(); } }
   else if(act==="cycleEvent"){ const i=EVENTS.findIndex(e=>e.id===activeEvent().id); S.account.eventOverride=EVENTS[(i+1)%EVENTS.length].id; maybeRotateEvent(); save(); openEvents(); }
   else if(act==="clearEvent"){ S.account.eventOverride=null; maybeRotateEvent(); save(); openEvents(); }
@@ -2860,13 +2968,23 @@ document.addEventListener("click",(ev)=>{
   else if(act==="redeemIotm") redeemIotm(v);
   else if(act==="equipIotm") equipIotm(v);
   else if(act==="buyMarg"){ if(buyMarginal()){ v==="mm"?openMM():openAscension(); } }
-  else if(act==="setNextDisc"){ _nextDisc=v; const el=$("#ascpick"); if(el) el.innerHTML=`Next life: <b>${_nextDisc}</b> · lifestyle on the buttons above.`; }
+  else if(act==="setNextDisc"){ _nextDisc=v; openAscension(); }
   else if(act==="doRegress") doRegress(v);
 });
-$("#adbtn").addEventListener("click",()=>{ if(!canWatchAd())return; S.run.stam=Math.min(stamCap(),S.run.stam+5); addMeter("screen",10); coachSay("ad"); logLine("sys","📺 Ad watched. +5 stamina. Not Natty™."); afterAction(false); });
+$("#adbtn").addEventListener("click",()=>{
+  if(!canWatchAd())return;
+  const g=adStaminaGain();
+  S.run.adsToday=(S.run.adsToday||0)+1;
+  S.run.stam=Math.min(stamCap(),S.run.stam+g);
+  addMeter("screen",20);                       // an ad is a straight +20% screen time (the hard cap on abuse)
+  coachSay("ad");                              // ads are Natty-safe now — the Coach just ribs you for it
+  logLine("sys",`📺 Ad watched. +${g} stamina. The grind pauses for no one, yet here we are.`);
+  S.run.outcome={sketch:{pose:"slob"},text:`📺 You sat through the whole thing. <b>+${g} stamina.</b> ${adSnark(g)}`,cls:"sys"};   // own card → clears any stale rhabdo card
+  afterAction(false);                          // card:false → keep the outcome we just set
+});
 $("#devrefill").addEventListener("click",()=>{ S.run.stam=stamCap(); S.run.injured=false; S.run.rhabdo=false; logLine("sys","🛠️ Dev: stamina refilled."); afterAction(false); });
 $("#devtier").addEventListener("click",()=>{ if(S.run.tier<maxTier()){ S.run.tier++; S.run.gains=0; if(S.run.keys)S.run.keys[S.run.tier-1]=null; if(S.run.tier>=maxTier())S.run.arenaOpen=true; S.account.floors.str=Math.max(S.account.floors.str,S.run.str); S.account.floors.end=Math.max(S.account.floors.end,S.run.end); S.account.floors.mob=Math.max(S.account.floors.mob,S.run.mob); logLine("sys","🛠️ Dev: +1 tier → T"+S.run.tier+(worldOpen()?" — world open":"")); } afterAction(false); });
-$("#devasc").addEventListener("click",()=>{ S.run.tier=12; S.run.arenaOpen=true; S.run.bossBeaten=true; logLine("gold","🛠️ Dev: ascend-ready — GOAT tier, boss beaten. Pick your next life."); save(); openAscension(); });
+$("#devasc").addEventListener("click",()=>{ S.run.tier=12; S.run.arenaOpen=true; S.run.bossBeaten=true; logLine("gold","🛠️ Dev: ascend-ready — GOAT tier, boss beaten. Pick your next life."); save(); regressScreen(); });
 $("#mmbtn").addEventListener("click",()=>{ openMM(); });
 $("#stashbtn").addEventListener("click",()=>{ openStash(); });
 $("#gearbtn").addEventListener("click",()=>{ openGear(); });
@@ -2875,6 +2993,7 @@ $("#patchbtn").addEventListener("click",()=>{ openPatchShop(); });
 $("#boardbtn").addEventListener("click",()=>{ openBoards(); });
 $("#eventbtn").addEventListener("click",()=>{ openEvents(); });
 $("#feedbackbtn").addEventListener("click",()=>{ openFeedback(); });
+$("#betabtn").addEventListener("click",()=>{ openBetaSignup(); });
 $("#helpbtn").addEventListener("click",()=>{ openHelp(); });
 $("#tgbtn").addEventListener("click",()=>{ if(TELEGRAM && typeof window!=="undefined") window.open(TELEGRAM,"_blank","noopener"); });
 $("#reset").addEventListener("click",()=>{ if(confirm("Hard reset ALL progress (account + run)?")){ localStorage.removeItem(SAVE_KEY); location.reload(); } });
