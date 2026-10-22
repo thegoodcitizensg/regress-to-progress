@@ -2778,8 +2778,9 @@ function openBoards(){
   const col=(div)=>{ const rows=all.filter(e=>e.div===div).sort((x,y)=>x.actions-y.actions).slice(0,10);
     return rows.length ? rows.map((e,i)=>`<div class="choice" style="display:flex;justify-content:space-between;align-items:center${e.who==="You"?";border-color:var(--accent)":""}"><span>${i+1}. ${e.who==="You"?"<b>You</b>":e.who} <span class="tiny">(${e.disc}${e.path?" · path":""})</span></span><span><b>${e.actions}</b> <span class="tiny">actions</span></span></div>`).join("")
       : `<p class="muted tiny">No entries yet — beat a run to post a time.</p>`; };
-  showModal(`<h3>🏆 Ranked — Ascension Speed</h3>
-    <p class="tiny">Ranked on how FAST you reach the top and regress — fewest actions wins, NOT raw strength. Two divisions: <b>🌿 Tested</b> (strictly natty) vs <b>💉 Open</b> (ever touched The Juice). Stay natty for the honest board. <i>(Live global boards = Phase E/backend; seeded rivals shown for now.)</i></p>
+  showModal(`<h3>🏆 Ranked — Ascension Speed <span class="pill">preview</span></h3>
+    <div class="fb-brief">⚠️ <b>Preview — not live yet.</b> These rivals are <b>fake, seeded names</b> and your runs only save on this device. <b>Live global ranks are coming soon</b> — you'll compete against real players then.</div>
+    <p class="tiny">Ranked on how FAST you reach the top and regress — fewest actions wins, NOT raw strength. Two divisions: <b>🌿 Tested</b> (strictly natty) vs <b>💉 Open</b> (ever touched The Juice). Stay natty for the honest board.</p>
     <p style="margin:8px 0 2px"><b>🌿 Tested (Natty)</b></p>${col("Tested")}
     <p style="margin:10px 0 2px"><b>💉 Open (Enhanced)</b></p>${col("Open")}
     <button class="choice" data-act="closeModal" style="margin-top:10px">Close</button>`);
