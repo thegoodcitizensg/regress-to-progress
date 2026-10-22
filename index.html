@@ -160,6 +160,14 @@ const FEEDBACK = {
   viewUrl:    "https://docs.google.com/forms/d/e/1FAIpQLSeG_Gyr8rSIAfUWUvZ4g9Nzidx3Ckf2a6I9M35rZ_-iZZWQVw/viewform",
   fields: { category:"entry.1028590795", message:"entry.279081050", context:"entry.1890012734" },
 };
+// Beta / Founding-Slob EMAIL list → a SEPARATE Google Form (clean email list, no feedback noise).
+// Paste the dedicated form's formResponse URL + entry ids below. While formAction is "", beta signups
+// gracefully fall back to the FEEDBACK form (category "🔔 Beta signup") so nothing breaks before setup.
+const BETASIGNUP = {
+  formAction: "https://docs.google.com/forms/d/e/1FAIpQLSdMWHSZ5MH8SPuqGqC8f7v3WeDM1oRRVz1pQDqLOBMc3eHaPA/formResponse",
+  viewUrl:    "https://docs.google.com/forms/d/e/1FAIpQLSdMWHSZ5MH8SPuqGqC8f7v3WeDM1oRRVz1pQDqLOBMc3eHaPA/viewform",
+  fields: { email:"entry.2063264144", name:"entry.448270236", context:"entry.726360125" },
+};
 // Playtest community (Telegram). Empty string hides the in-game links/button.
 const TELEGRAM = "https://t.me/+pRhrcuzvei1kNzU1";
 const esc = (s)=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -2888,15 +2896,24 @@ function sendBetaSignup(){
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ if(st){ st.textContent="That doesn't look like an email — mind checking it?"; st.style.color="var(--lose)"; } return; }
   if(st){ st.textContent="Signing you up…"; st.style.color="var(--faint)"; }
   S.account.email=email; S.account.betaSignup=true; S.account.founder=true; save();
-  const cat="🔔 Beta signup / Founding Slob", msg="BETA EMAIL: "+email, ctx=feedbackContext();
-  if(FEEDBACK.formAction && /^https:\/\/docs\.google\.com\//.test(FEEDBACK.formAction)){
+  const ctx=feedbackContext();
+  const dedicated = BETASIGNUP.formAction && /^https:\/\/docs\.google\.com\//.test(BETASIGNUP.formAction);
+  if(dedicated){                                    // clean dedicated email list
+    const fd=new FormData();
+    fd.append(BETASIGNUP.fields.email, email);
+    fd.append(BETASIGNUP.fields.name, (S.account&&S.account.name)||"");
+    fd.append(BETASIGNUP.fields.context, ctx);
+    fetch(BETASIGNUP.formAction,{method:"POST",mode:"no-cors",body:fd})
+      .then(()=>betaDone(email)).catch(()=>feedbackFallback("🔔 Beta signup","BETA EMAIL: "+email,ctx,BETASIGNUP.viewUrl));
+  } else if(FEEDBACK.formAction && /^https:\/\/docs\.google\.com\//.test(FEEDBACK.formAction)){   // fallback: piggyback feedback form
+    const cat="🔔 Beta signup / Founding Slob", msg="BETA EMAIL: "+email;
     const fd=new FormData();
     fd.append(FEEDBACK.fields.category, cat);
     fd.append(FEEDBACK.fields.message, msg);
     fd.append(FEEDBACK.fields.context, ctx);
     fetch(FEEDBACK.formAction,{method:"POST",mode:"no-cors",body:fd})
       .then(()=>betaDone(email)).catch(()=>feedbackFallback(cat,msg,ctx));
-  } else { feedbackFallback(cat,msg,ctx); }
+  } else { feedbackFallback("🔔 Beta signup","BETA EMAIL: "+email,ctx); }
 }
 function betaDone(email){ showModal(`<h3>🛋️ Welcome to the Founding Slob club</h3>
   <p class="flav">You're on the list as <b>${esc(email)}</b>. When beta opens, you'll be first to know — perks and all. Now get off your phone and back to the grind.</p>
@@ -2919,10 +2936,11 @@ function sendFeedback(){
 function feedbackDone(){ showModal(`<h3>🙏 Thank you!</h3>
   <p class="flav">Your feedback reached the dev (snapshot attached). Now get back to the grind.</p>
   <button class="choice" data-act="closeModal">Close</button>`); }
-function feedbackFallback(cat,msg,ctx){
-  const link = FEEDBACK.viewUrl
-    ? `<a class="link" href="${esc(FEEDBACK.viewUrl)}" target="_blank" rel="noopener">open the feedback form in a new tab</a>`
-    : "the feedback form (being set up)";
+function feedbackFallback(cat,msg,ctx,viewUrl){
+  const vu = viewUrl || FEEDBACK.viewUrl;
+  const link = vu
+    ? `<a class="link" href="${esc(vu)}" target="_blank" rel="noopener">open the form in a new tab</a>`
+    : "the form (being set up)";
   showModal(`<h3>💬 Almost there</h3>
     <div class="fb-brief">The in-game send couldn't reach the channel. Please ${link} and paste your note below — or just screenshot it.</div>
     <label class="tiny">Copy this</label>
