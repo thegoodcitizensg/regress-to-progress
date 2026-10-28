@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"/>
-<title>Regress to Progress (R2P) — v0.5.1</title>
+<title>Regress to Progress (R2P) — v0.5.2</title>
 <meta name="description" content="A comedy fitness idle-RPG. When does fitness ever end?"/>
 <meta name="theme-color" content="#f4efe4"/>
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#232323"/>
@@ -108,7 +108,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Regress to Progress <span class="pill">v0.5.1 · R2P</span></h1>
+  <h1>Regress to Progress <span class="pill">v0.5.2 · R2P</span></h1>
   <p class="sub">When does fitness ever end? <a class="link" id="themebtn">theme</a></p>
 
   <div class="coach card" id="coach">
@@ -993,7 +993,17 @@ const FLOOR_TIER_CAP=5;      // muscle-memory melts only tiers 0..5 of 13 (Guard
 const FLOOR_SPEED_MULT=0.35; // accelerated tiers cost 35% of normal gains
 const FLOOR_TRANSFER_RATE=0.5; // cross-discipline memory applies at 50% (Guardrail 2)
 const SAVE_KEY="prorer_v4";
-const R2P_VERSION="0.5.1";
+const R2P_VERSION="0.5.2";
+/* --- WHAT'S NEW (patch notes) ---------------------------------------------------------------
+   On update, bump R2P_VERSION above and add the matching entry at the TOP here. Existing players
+   see the current version's entry ONCE on their next open (gated by account.seenPatchV). Notes are
+   author-trusted HTML. Keep them player-facing and in-voice — the coach is watching. */
+const CHANGELOG=[
+  {v:"0.5.2", title:"Stamina that actually banks", notes:[
+    "Miss a day? Your daily stamina now <b>stacks</b> instead of vanishing — <b>+50 for every day you're away</b>, banking up to your cap (150 to start). Skip the gym for 3 days and you'll come back to a full tank. The couch rewards patience. For once.",
+    "The stamina hint and the morning welcome-back note now tell you <b>exactly how much you banked</b> while you were gone.",
+  ]},
+];
 /* bodyweight work yields less raw stat than loaded/equipment work (you can't add plates to a push-up).
    These exercise ids are bodyweight → ×0.8 gains in train(). Cardio/metcon/loaded aren't tagged. (Tunable.) */
 const BODYWEIGHT_IDS = new Set(["pushup","homewo","bars","push","core","pyramids","ringwork","gymnastics","skill","burpee","tilt","mat","lakemat"]);
@@ -1006,6 +1016,11 @@ const chance=(p)=>Math.random()<p;
 const pick=(a)=>a[Math.floor(Math.random()*a.length)];
 const clone=(o)=>JSON.parse(JSON.stringify(o));
 function todayStr(){ const d=new Date(); return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate(); }
+/* whole calendar days between two todayStr() strings (local midnight → local midnight; Math.round absorbs DST) */
+function daysBetween(fromStr, toStr){
+  const p=s=>{ const [y,m,d]=String(s).split("-").map(Number); return new Date(y,(m||1)-1,d||1).getTime(); };
+  return Math.round((p(toStr)-p(fromStr))/86400000);
+}
 
 /* --- state: PERMANENT (account) + PER-RUN (run). The split IS the eternal loop. --- */
 function freshRun(disc, lifestyle){
@@ -1040,6 +1055,7 @@ const BASE={
     trophies:{},                                               // event-participation collectibles (cosmetic)
     gearInv:{}, gear:{},                                        // permanent wearable-gear kit: owned counts + equipped {slot:id}
     firstSeenTs:0, firstVersion:"", founder:false,              // alpha-tester tracking: when/what version they first played → "Founding Slob" perk at beta
+    seenPatchV:"",                                              // last version whose "What's new" notes this player saw → gates the patch-notes popup
     email:"", betaSignup:false,                                 // opt-in beta-notify list (the durable, cross-device way to recognise + reward testers)
   },
   run:null,
@@ -1169,8 +1185,11 @@ function tick(){
   const newDay = r.lastDay!==today;
   const legitTime = now >= (a.maxTs||0)-TOL && (now-(a.lastRollTs||0))>=DAY_MS;
   if(newDay && legitTime){
+    const missedDays = Math.max(1, daysBetween(r.lastDay, today));   // calendar days since last rollover; away 3 days → bank 3 days
     r.lastDay=today; a.lastRollTs=now; r._clockWarned=false; a.dayCount=(a.dayCount||0)+1;
-    r.stam=Math.min(stamCap(), r.stam + STAM_MAX_BASE);   // grant a full day, bank to cap
+    const stamBefore=r.stam;
+    r.stam=Math.min(stamCap(), r.stam + STAM_MAX_BASE*missedDays);   // +50 banked per elapsed day, capped by stamCap (base 150 = 3 days)
+    const stamGained=r.stam-stamBefore;
     r.meters.over=clamp(r.meters.over-30,0,100);
     r.meters.screen=clamp(r.meters.screen-40,0,100);
     r.meters.subs=clamp(r.meters.subs-20,0,100);
@@ -1180,7 +1199,9 @@ function tick(){
     if(pathHas("dailyOrDie") && !r.trainedToday){ a.maxTs=Math.max(a.maxTs||0,now); failChallenge("The 75 Hard-O: you missed a day. The whole thing resets. Those are the rules — you knew them."); return; }
     r.trainedToday=false;   // new day: must train again (75 Hard-O)
     if(r.health<30) r.health=clamp(r.health+15,0,30);
-    logLine("gold","🌅 A new day. Stamina replenished. The world resets — you don't (you keep your gains).");
+    logLine("gold", missedDays>1
+      ? `🌅 Back after ${missedDays} days — banked +${stamGained} stamina. The world resets — you don't (you keep your gains).`
+      : `🌅 A new day. +${stamGained} stamina banked. The world resets — you don't (you keep your gains).`);
   } else if(newDay && now < (a.maxTs||0)-TOL && !r._clockWarned){
     r._clockWarned=true;   // clock set backward → no free day until real time catches up
     logLine("lose","⏰ Your device clock jumped backwards. Nice try — no free day. Real time has to catch up first.");
@@ -1189,7 +1210,7 @@ function tick(){
   if(r.injured && r.meters.over<40){ r.injured=false; if(!r.rhabdo) logLine("sys","🙂 Rested up. You can train again."); }
   if(r.rhabdo && r.meters.over<40 && r.health>=20){ r.rhabdo=false; r.injured=false; logLine("sys","🙂 Uncle Rhabdo has left the building. Hydrate. Never again. (You will.)"); }
   const el=$("#regen");
-  if(el) el.textContent = r.stam>0 ? "⚡ Stamina refills fully at the start of each new day." : "Out of stamina — come back tomorrow, watch an ad, or rest.";
+  if(el) el.textContent = r.stam>0 ? `⚡ +${STAM_MAX_BASE} stamina each new day, banking up to ${stamCap()}. Miss days and it stacks.` : "Out of stamina — come back tomorrow, watch an ad, or rest.";
 }
 
 /* --- meters: liver-gamble on `subs` (enhanced), others hard walls --- */
@@ -2826,6 +2847,20 @@ function openOnboarding(){
   `);
 }
 
+/* --- "What's new" patch-notes popup: shown once per version to returning players (see CHANGELOG) --- */
+function latestChangelog(){ return CHANGELOG.find(c=>c.v===R2P_VERSION); }
+function openWhatsNew(){
+  const c=latestChangelog(); if(!c) return;
+  S.account.seenPatchV=R2P_VERSION; save();   // mark seen the moment it opens, so a refresh won't re-pop it
+  const items=c.notes.map(n=>`<li style="margin-bottom:6px">${n}</li>`).join("");   // notes are author-trusted HTML
+  showModal(`
+    <h3 style="margin:2px 0 4px">🆕 What's new <span class="pill">v${esc(c.v)}</span></h3>
+    ${c.title?`<p class="flav" style="margin-top:0"><b>${esc(c.title)}</b></p>`:""}
+    <ul style="margin:6px 0 12px;padding-left:18px;line-height:1.45">${items}</ul>
+    <button class="choice" data-act="closeModal"><b>Back to the grind →</b></button>
+  `);
+}
+
 function testBriefHTML(){ return `<div class="fb-brief">
   <b>What to try (poke everything):</b>
   <ul>
@@ -3023,7 +3058,7 @@ if(S.settings&&S.settings.theme) document.documentElement.setAttribute("data-the
 if(!DEV){ ["devrefill","devtier","devasc","artbtn"].forEach(id=>{ const e=$("#"+id); if(e) e.style.display="none"; }); }   // hide dev tools for testers (add ?dev=1 to show)
 if(!TELEGRAM){ const _t=$("#tgbtn"); if(_t) _t.style.display="none"; }   // hide community button if no channel set
 const _needOnboard = !S.account.name;
-if(_needOnboard){ /* new player → character creation overlay opens right after first render */ }
+if(_needOnboard){ S.account.seenPatchV=R2P_VERSION; /* new player: skip patch notes (they onboard); overlay opens right after first render */ }
 else if(!S.account.seenOnboard){ coachSay("onboarding"); S.account.seenOnboard=true; logLine("sys","<b>Welcome to Regress to Progress.</b> You're a slob on a couch. Somewhere out there is a gym. It fears you less than you fear it."); }
 else coachSay("dailyReturn");
 S.account.maxTs=Math.max(S.account.maxTs||0, Date.now());   // seed clock-tamper baseline
@@ -3031,6 +3066,7 @@ maybeRotateEvent();   // announce + set the active calendar event on boot
 maybeCertify();
 render();
 if(_needOnboard) openOnboarding();
+else if(latestChangelog() && S.account.seenPatchV!==R2P_VERSION) openWhatsNew();   // returning player on an older version → "What's new" once
 setInterval(()=>{ tick(); renderStats(); },1000);
 save();
 // idle coach nudge
